@@ -2707,35 +2707,46 @@ module.exports = Replicator = (function(_super) {
   };
 
   Replicator.prototype.registerRemote = function(config, callback) {
+    log.debug('In registerDevice');
     return request.post({
-      uri: "" + (this.config.getScheme()) + "://" + config.cozyURL + "/device/",
+      uri: "" + (this.config.getScheme()) + "://owner:" + config.password + "@" + config.cozyURL + "/device",
       auth: {
         username: 'owner',
         password: config.password
       },
       json: {
         login: config.deviceName,
-        type: 'mobile'
+        permissions: {
+          File: {
+            description: "Fetch files list"
+          },
+          Folder: {
+            description: "Fetch folders list"
+          },
+          Binary: {
+            description: "Fetch binaries"
+          },
+          Contact: {
+            description: 'Synchronize contacts'
+          }
+        }
       }
     }, (function(_this) {
       return function(err, response, body) {
         if (err) {
           return callback(err);
-        } else if (response.statusCode === 401 && response.reason) {
-          return callback(new Error('cozy need patch'));
-        } else if (response.statusCode === 401) {
-          return callback(new Error('wrong password'));
-        } else if (response.statusCode === 400) {
-          return callback(new Error('device name already exist'));
+        } else if (response.statusCode !== 201) {
+          log.error("while registering device:  " + response.statusCode);
+          return callback(new Error(response.statusCode, response.reason));
         } else {
+          log.debug(body);
           _.extend(config, {
-            password: body.password,
-            deviceId: body.id,
+            devicePassword: body.password,
+            deviceName: body.login,
             auth: {
-              username: config.deviceName,
+              username: body.login,
               password: body.password
-            },
-            fullRemoteURL: ("" + (_this.config.getScheme()) + "://" + config.deviceName + ":" + body.password) + ("@" + config.cozyURL + "/cozy")
+            }
           });
           return _this.config.save(config, callback);
         }
@@ -2756,7 +2767,7 @@ module.exports = Replicator = (function(_super) {
         }
         log.info("enter initialReplication");
         _this.stopRealtime();
-        options = _this.config.makeUrl('/_changes?descending=true&limit=1');
+        options = _this.config.makeReplicationUrl('/_changes?descending=true&limit=1');
         return request.get(options, function(err, res, body) {
           var last_seq;
           if (err) {
@@ -2807,17 +2818,9 @@ module.exports = Replicator = (function(_super) {
   };
 
   Replicator.prototype.copyView = function(model, callback) {
-    var handleResponse, options, options2;
+    var handleResponse, options;
     log.info("enter copyView for " + model + ".");
-    if (model === 'file' || model === 'folder') {
-      options = this.config.makeUrl("/_design/" + model + "/_view/files-all/");
-      options2 = this.config.makeUrl("/_design/" + model + "/_view/all/");
-    } else if (model === 'notification') {
-      options = this.config.makeUrl("/_design/" + model + "/_view/all/");
-      options2 = this.config.makeUrl("/_design/" + model + "/_view/byDate/");
-    } else {
-      options = this.config.makeUrl("/_design/" + model + "/_view/all/");
-    }
+    options = this.config.makeDSUrl("/request/" + model + "/all/");
     handleResponse = (function(_this) {
       return function(err, res, body) {
         var _ref;
@@ -2842,11 +2845,7 @@ module.exports = Replicator = (function(_super) {
       };
     })(this);
     return request.get(options, function(err, res, body) {
-      if (res.status === 404 && (model === 'file' || model === 'folder' || model === 'notification')) {
-        return request.get(options2, handleResponse);
-      } else {
-        return handleResponse(err, res, body);
-      }
+      return handleResponse(err, res, body);
     });
   };
 
@@ -3852,11 +3851,15 @@ module.exports = ReplicatorConfig = (function(_super) {
     }
   };
 
-  ReplicatorConfig.prototype.makeUrl = function(path) {
+  ReplicatorConfig.prototype.makeDSUrl = function(path) {
+    return ("" + (this.getScheme()) + "://" + (this.get("deviceName")) + ":" + (this.get('devicePassword'))) + "@" + this.get('cozyURL') + '/ds-api' + path;
+  };
+
+  ReplicatorConfig.prototype.makeReplicationUrl = function(path) {
     return {
       json: true,
       auth: this.get('auth'),
-      url: ("" + (this.getScheme()) + "://") + this.get('cozyURL') + '/cozy' + path
+      url: ("" + (this.getScheme()) + "://") + this.get('cozyURL') + '/replication' + path
     };
   };
 
@@ -3866,7 +3869,7 @@ module.exports = ReplicatorConfig = (function(_super) {
 
   ReplicatorConfig.prototype.createRemotePouchInstance = function() {
     return new PouchDB({
-      name: this.get('fullRemoteURL'),
+      name: ("" + (this.getScheme()) + "://") + this.get('cozyURL') + '/replication',
       ajax: {
         timeout: 5 * 60 * 1000
       }
