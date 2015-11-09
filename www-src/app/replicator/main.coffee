@@ -7,6 +7,7 @@ DBNAME = "cozy-files.db"
 DBPHOTOS = "cozy-photos.db"
 DBOPTIONS = adapter: 'idb'
 
+
 log = require('/lib/persistent_log')
     prefix: "replicator"
     date: true
@@ -79,6 +80,12 @@ module.exports = class Replicator extends Backbone.Model
 
             callback error
 
+    permissions:
+        File: description: "Fetch files list"
+        Folder: description: "Fetch folders list"
+        Binary: description: "Fetch binaries"
+        Contact: description: 'Synchronize contacts'
+
     # registerDevice: (config, callback) ->
     registerRemote: (config, callback) ->
         log.debug 'In registerDevice'
@@ -89,11 +96,8 @@ module.exports = class Replicator extends Backbone.Model
                 password: config.password
             json:
                 login: config.deviceName
-                permissions:
-                    File: description: "Fetch files list"
-                    Folder: description: "Fetch folders list"
-                    Binary: description: "Fetch binaries"
-                    Contact: description: 'Synchronize contacts'
+                permissions: @permissions
+
         , (err, response, body) =>
             if err
                 callback err
@@ -215,25 +219,30 @@ module.exports = class Replicator extends Backbone.Model
         #     options = @config.makeUrl "/_design/#{model}/_view/all/"
         #     options2 = @config.makeUrl "/_design/#{model}/_view/byDate/"
         options = @config.makeDSUrl "/request/#{model}/all/"
-
-        handleResponse = (err, res, body) =>
+        options.body = {}
+        handleResponse = (err, res, models) =>
             if not err and res.status > 399
                 log.info "Unexpected response: #{res}"
                 err = new Error res.statusText
             return callback err if err
-            return callback null unless body.rows?.length
-
-            async.eachSeries body.rows, (doc, cb) =>
-                doc = doc.value
-                @db.put doc, 'new_edits':false, (err, file) =>
+            return callback null unless models?.length isnt 0
+            console.log "here!"
+            async.eachSeries models, (doc, cb) =>
+                console.log doc
+                model = doc.value
+                @db.put model, 'new_edits':false, (err, file) =>
+                    console.log(err);
+                    console.log(file);
                     cb()
             , callback
 
-        request.get options, (err, res, body) ->
-            # if res.status is 404 and model in ['file', 'folder','notification']
-                # request.get options2, handleResponse
+        request.post options, (err, res, models) ->
+            console.log models.length
+            # if res.status is 404 and model in ['file', 'folder']
+            #     request.get options2, handleResponse
+
             # else
-            handleResponse(err, res, body)
+            handleResponse(err, res, models)
 
 
     # update index for further speeds up.
@@ -313,9 +322,10 @@ module.exports = class Replicator extends Backbone.Model
                 return callback null, entry.toURL() if entry
 
                 # getFile failed, let's download
-                options = @config.makeUrl "/#{model.binary.file.id}/file"
+                # options = @config.makeUrl "/#{model.binary.file.id}/file"
+                options = @config.makeDSUrl "/data/#{model._id}/binaries/file"
                 options.path = binfolder.toURL() + '/' + model.name
-
+                console.log options
                 log.info "download binary of #{model.name}"
                 fs.download options, progressback, (err, entry) =>
                     # TODO : Is it reachable code ? https://github.com/cozy/cozy-mobile/commit/7f46ac90c671f0704887bce7d83483c5f323056a
@@ -506,8 +516,8 @@ module.exports = class Replicator extends Backbone.Model
         return callback null if @get 'inSync'
 
 
-        unless @config.has('checkpointed')
-            return callback new Error "database not initialized"
+        # unless @config.has('checkpointed')
+        #     return callback new Error "database not initialized"
 
 
 
@@ -572,6 +582,7 @@ module.exports = class Replicator extends Backbone.Model
     realtimeBackupCoef = 1
 
     startRealtime: =>
+        # Stub
         if @liveReplication or not app.foreground
             return
 
@@ -580,10 +591,10 @@ module.exports = class Replicator extends Backbone.Model
 
             if confirm t 'Database not initialized. Do it now ?'
                 app.router.navigate 'first-sync', trigger: true
-                # @resetSynchro (err) =>
-                #     if err
-                #         log.error err
-                #         return alert err.message
+                @resetSynchro (err) =>
+                    if err
+                        log.error err
+                        return alert err.message
 
             return
 
@@ -624,11 +635,12 @@ module.exports = class Replicator extends Backbone.Model
             @liveReplication = null
 
         @liveReplication.once 'error', (e) =>
+            console.log e
             @liveReplication = null
-            realtimeBackupCoef++ if realtimeBackupCoef < 6
-            timeout = 1000 * (1 << realtimeBackupCoef)
-            log.error "REALTIME BROKE, TRY AGAIN IN #{timeout} #{e.toString()}"
-            @realtimeBackOff = setTimeout @startRealtime, timeout
+            # realtimeBackupCoef++ if realtimeBackupCoef < 6
+            # timeout = 1000 * (1 << realtimeBackupCoef)
+            # log.error "REALTIME BROKE, TRY AGAIN IN #{timeout} #{e.toString()}"
+            # @realtimeBackOff = setTimeout @startRealtime, timeout
 
     stopRealtime: =>
         # Stop replication.
