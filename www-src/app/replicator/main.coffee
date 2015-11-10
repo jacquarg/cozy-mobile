@@ -5,8 +5,8 @@ ReplicatorConfig = require './replicator_config'
 DeviceStatus = require '../lib/device_status'
 DBNAME = "cozy-files.db"
 DBPHOTOS = "cozy-photos.db"
-DBOPTIONS = adapter: 'idb'
-
+# DBOPTIONS = adapter: 'idb'
+DBOPTIONS = {}
 
 log = require('/lib/persistent_log')
     prefix: "replicator"
@@ -81,10 +81,10 @@ module.exports = class Replicator extends Backbone.Model
             callback error
 
     permissions:
-        File: description: "Fetch files list"
-        Folder: description: "Fetch folders list"
-        Binary: description: "Fetch binaries"
-        Contact: description: 'Synchronize contacts'
+        File: description: "files permission description"
+        Folder: description: "folder permission description"
+        Binary: description: "binary permission description"
+        Contact: description: "contact permission description"
 
     # registerDevice: (config, callback) ->
     registerRemote: (config, callback) ->
