@@ -8,6 +8,10 @@ DBPHOTOS = "cozy-photos.db"
 # DBOPTIONS = adapter: 'idb'
 DBOPTIONS = {}
 
+PLATFORM_MIN_VERSIONS =
+    'proxy': '2.1.7'
+    'data-system': '2.0.8'
+
 log = require('/lib/persistent_log')
     prefix: "replicator"
     date: true
@@ -43,6 +47,39 @@ module.exports = class Replicator extends Backbone.Model
                     return callback err if err
                     @config = new ReplicatorConfig(this)
                     @config.fetch callback
+
+
+    checkPlatformVersions: (callback) ->
+        cutVersion = (s) ->
+            [s, major, minor, patch] = s.match /(\d+)\.(\d+)\.(\d+)/
+            return { major, minor, patch }
+
+        request.get
+            url: "#{@config.getScheme()}://#{@config.get('cozyURL')}/versions"
+            json: true
+        , (err, response, body) ->
+            return callback err if err # TODO i18n ?
+
+            console.log body
+            for item in body
+                console.log item
+                [s, app, version] = item.match /([^:]+): ([\d\.]+)/
+                console.log app
+                console.log version
+                if app of PLATFORM_MIN_VERSIONS
+                    minVersion = cutVersion PLATFORM_MIN_VERSIONS[app]
+                    version = cutVersion version
+
+                    if version.major < minVersion.major or
+                    version.minor < minVersion.minor or
+                    version.path < minVersion.patch
+                        msg = t 'error need min %version for %app'
+                        msg = msg.replace('%app', app)
+                                 .replace('%version', PLATFORM_MIN_VERSIONS[app])
+                        return callback new Error msg
+
+            # Everything fine
+            callback()
 
 
     destroyDB: (callback) ->
@@ -85,6 +122,7 @@ module.exports = class Replicator extends Backbone.Model
         Folder: description: "folder permission description"
         Binary: description: "binary permission description"
         Contact: description: "contact permission description"
+        Event: description: "just testing"
 
     # registerDevice: (config, callback) ->
     registerRemote: (config, callback) ->
@@ -115,7 +153,7 @@ module.exports = class Replicator extends Backbone.Model
                 _.extend config,
                     devicePassword: body.password
                     deviceName: body.login
-                    devicePermissions: @config.serializePermissions body.persmissions
+                    devicePermissions: @config.serializePermissions body.permissions
                     auth:
                         username: body.login
                         password: body.password
@@ -125,20 +163,20 @@ module.exports = class Replicator extends Backbone.Model
 
     updatePermissions: (password, callback) ->
         request.put
-            uri: "#{@config.getScheme()}://owner:#{password}@#{@config.get('cozyURL')}/device"
+            uri: "#{@config.getScheme()}://owner:#{password}@#{@config.get('cozyURL')}/device/#{@config.get('deviceName')}"
             auth:
                 username: 'owner'
                 password: password
             json:
                 login: @config.get 'deviceName'
                 permissions: @permissions
-        , (err, response, body) ->
+        , (err, response, body) =>
             return callback err if err
-
             log.debug body
 
             @config.save
-                permissions: @config.serializePermissions body.persmissions
+                permissions: @config.serializePermissions body.permissions
+            , callback
 
 
 
