@@ -7,6 +7,7 @@ ServiceManager = require './service/service_manager'
 Notifications = require '../views/notifications'
 DeviceStatus = require './lib/device_status'
 
+
 log = require('/lib/persistent_log')
     prefix: "application"
     date: true
@@ -44,10 +45,14 @@ module.exports =
                 if err
                     log.error err
                     return alert err.message or err
+
                 # Monkey patch for browser debugging
                 unless window.isBrowserDebugging
-                    @notificationManager = new Notifications()
+                    # TODO : stub !
+                    # @notificationManager = new Notifications()
                     @serviceManager = new ServiceManager()
+
+
 
                 $('body').empty().append @layout.render().$el
                 $('body').css 'background-color', 'white'
