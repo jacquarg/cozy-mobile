@@ -64,7 +64,8 @@ module.exports =
                     app.replicator.checkPlatformVersions (err) =>
                         if err
                             log.error err
-                            return alert err.message or err
+                            alert err.message or err
+                            return navigator.app.exitApp()
 
                         unless config.hasPermissions()
                             app.router.navigate 'permissions', trigger: true
